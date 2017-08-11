@@ -140,7 +140,7 @@ class sample_opt(optimization_routine):
             final_locs=np.argpartition(f_across_iters[0], self.save_k)\
                 [0:self.save_k]
         return np.atleast_2d(x_across_iters[0][final_locs]), \
-               np.atleast_2d(f_across_iters[final_locs])
+               np.atleast_2d(f_across_iters[0][final_locs])
 
 
 

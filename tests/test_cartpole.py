@@ -7,11 +7,8 @@ example in OpenAI Gym. The controller was taken from the website.
 
 import logging
 import numpy as np
-from collections import namedtuple
-
 
 import gym
-elems = namedtuple('elems', 'x y')
 
 class EpisodicAgent(object):
     """
@@ -142,7 +139,7 @@ env = gym.make('CartPole-v0')
 agent = EpisodicAgent(env.action_space)
 
 np.random.seed(2352454)
-episode_count = 200
+episode_count = 500
 max_steps = 100
 reward = 0
 done = False
@@ -201,7 +198,7 @@ for r in rand_nums:
     TM.initialize()
     TM.run_BO(150)
     smooth_details_r1.append([TM.smooth_count, TM.smooth_min_val])
-    random_details_r1.append([TM.random_count, TM.random_min_val])
+    random_details_r1.append([TM.rand_count, TM.rand_min_val])
 
 # Requirement 2: Imagine a wall around th cartpole which is at location -0.15, 0.15
 # We would like the cartpole to stay within that region, but if not we would like it
@@ -218,6 +215,8 @@ bounds[4] = (0.05, 0.15)
 smooth_details_r2 = []
 ns_details_r2 = []
 random_details_r2 = []
+from active_testing import sample_opt
+opt = sample_opt(bounds=bounds, num_sample=15000, save_k = 2)
 for r in rand_nums:
     np.random.seed(r)
     nodes_pred1 = [pred_node(f=lambda t: pred1(t[0][i][0])) for i in\
@@ -230,9 +229,9 @@ for r in rand_nums:
     TM = test_module(bounds=bounds, sut=lambda x0: compute_traj(50,init_state=x0[0:4],
                     masspole =x0[4]), f_tree = min_root_node, with_ns = True,
                      with_random = True, init_sample = 50, optimize_restarts = 5,
-                     exp_weight = 10)
+                     exp_weight = 10, optimizer=opt)
     TM.initialize()
-    TM.run_BO(150)
+    TM.run_BO(75)
     smooth_details_r2.append([TM.smooth_count, TM.smooth_min_val])
     random_details_r2.append([TM.rand_count, TM.rand_min_val])
     ns_details_r2.append([TM.ns_count, TM.ns_min_val])
