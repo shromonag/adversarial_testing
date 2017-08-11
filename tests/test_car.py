@@ -19,7 +19,7 @@ import GPy
 def car_dyn(x, x_obs, delta_t, eig1, eig2):
     a = -(eig1+eig2)*x[1] + (eig1*eig2)*(x_obs - x[0])
     if a < -3:
-    a = -3
+        a = -3
     if a > 3:
          a = 3
     x_t1 = x[0] + x[1] * delta_t
@@ -40,15 +40,15 @@ def compute_traj(x0, xobs_n):
 def f_prednode(traj):
     return np.array([5 - t[0] for t in traj]).min()
 
-    bounds = [(4.5, 5.5)] * 100
-    x0 = np.array([0., 3.])
+bounds = [(4.5, 5.5)] * 100
+x0 = np.array([0., 3.])
 
-    rand_nums = [3099588838, 3262578689, 4162876793, 2715705470]
-    rand_details = []
-    smooth_details = []
-    for r in rand_nums:
-        np.random.seed(r)
-        node0 = pred_node(f=f_prednode)
+rand_nums = [3099588838, 3262578689, 4162876793, 2715705470]
+rand_details = []
+smooth_details = []
+for r in rand_nums:
+    np.random.seed(r)
+    node0 = pred_node(f=f_prednode)
 
     TM = test_module(bounds=bounds, sut=lambda x: compute_traj(x0, x), f_tree=node0,
                      with_random = True, init_sample = 100, optimize_restarts = 5,

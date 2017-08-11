@@ -42,6 +42,7 @@ node0 = max_node(children=[node1, node2])
 TM = test_module(bounds=bounds, sut=lambda x:x, f_tree=node0, with_ns=True,
                  with_random=True, init_sample=10, optimizer=opt,
                  optimize_restarts=5, exp_weight=2, X=X)
+TM.initialize()
 TM.run_BO(50)
 plt.figure(len(random_ints)+ 1)
 plt.plot(TM.smooth_X[10:])
@@ -50,3 +51,4 @@ plt.plot(TM.random_X[10:])
 plt.ylabel('Location of minimum')
 plt.xlabel('Number of samples')
 plt.title('Finding the minimum of max(sin(x), cos(x))')
+plt.show()
