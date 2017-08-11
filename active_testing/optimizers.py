@@ -134,13 +134,14 @@ class sample_opt(optimization_routine):
             x_across_iters.append(X[save_locs])
         x_across_iters = np.array(x_across_iters)
         f_across_iters = np.array(f_across_iters)
-        if len(f_across_iters[0]) <= self.save_k:
-            final_locs = [i for i in range(len(f_across_iters[0]))]
+        if self.iters == 1:
+            return np.atleast_2d(x_across_iters[0]), \
+                   np.atleast_2d(f_across_iters[0])
         else:
             final_locs=np.argpartition(f_across_iters[0], self.save_k)\
                 [0:self.save_k]
-        return np.atleast_2d(x_across_iters[0][final_locs]), \
-               np.atleast_2d(f_across_iters[0][final_locs])
+            return np.atleast_2d(x_across_iters[0][final_locs]), \
+                   np.atleast_2d(f_across_iters[0][final_locs])
 
 
 
