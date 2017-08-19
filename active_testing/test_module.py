@@ -26,11 +26,16 @@ class test_module:
 
         self.bounds = bounds
 
+        if 'cost_model' in kwargs:
+            self.cost_model = kwargs['cost_model']
+        else:
+            self.cost_model = lambda x: 1
+
         # Choosing the optimizers
         if 'opt_name' in kwargs:
             self.optimizer = select_opt(kwargs[opt_name])(bounds, **kwargs)
         elif optimizer is None:
-            self.optimizer = sample_opt(bounds=bounds)
+            self.optimizer = sample_opt(bounds=bounds, cost=self.cost_model)
         else:
             self.optimizer = optimizer
 
@@ -150,8 +155,13 @@ class test_module:
                         x_s = self.kpca_s.transform(x)
                     else:
                         x_s = x
-                    return self.f_acqu.evaluate(x_s, k=self.k)
-                x,f= self.optimizer.optimize(f=f)
+                    if isinstance(self.optimizer, lbfgs_opt):
+                        df = self.f_acqu.eval_df(x_s, k = self.k)
+                    else:
+                        df=None
+                    return self.f_acqu.evaluate(x_s, k=self.k), df
+                x,f= self.optimizer.optimize(f=lambda x:f(x)[0],
+                                             df = lambda x:f(x)[1])
                 self.smooth_X = np.vstack((self.smooth_X, np.atleast_2d(x)))
                 trajs = [self.system_under_test(x_i) for x_i in x]
                 if self.using_kpca:
@@ -167,8 +177,15 @@ class test_module:
                     else:
                         X_ns = X
                     m,v = self.ns_GP.predict(X_ns)
-                    return m - self.k*np.sqrt(v)
-                x,f = self.optimizer.optimize(f=f)
+                    if isinstance(self.optimizer, lbfgs_opt):
+                        dm,dv = self.ns_GP.predictive_gradients(X_ns)
+                        dm = dm[:,:,0]
+                        df = dm - (self.k/2)*(dv/np.sqrt(v))
+                    else:
+                        df =None
+                    return m - self.k*np.sqrt(v), df
+                x,f = self.optimizer.optimize(f=lambda x: f(x)[0],
+                                              df = lambda x:f(x)[1])
                 trajs = [self.system_under_test(x_i) for x_i in x]
                 f_x = self.f_acqu.eval_robustness(trajs)
                 self.ns_X = np.vstack((self.ns_X, np.atleast_2d(x)))
