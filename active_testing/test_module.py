@@ -107,6 +107,11 @@ class test_module:
         else:
             self.X = []
 
+        if 'seed' in kwargs:
+            self.seed =kwargs['seed']
+        else:
+            self.seed =None
+
     def initialize(self):
         if len(self.X) == 0:
             X = sample_from(self.init_sample, self.bounds)
@@ -197,6 +202,9 @@ class test_module:
                                   np.vstack((self.ns_GP.Y, np.atleast_2d(f_x))))
                 self.ns_GP.optimize_restarts(self.optimize_restarts)
         if self.with_random:
+            if self.seed is not None:
+                np.random.seed(self.seed)
+                sample_from(self.init_sample, self.bounds)
             rand_x = sample_from(iters_BO, self.bounds)
             trajs = []
             for x in rand_x:
