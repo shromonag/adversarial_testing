@@ -24,6 +24,7 @@ act = deepq.learn(
     param_noise=True
 )
 
+from gym import spaces
 def compute_traj(**kwargs):
     env.reset()
     print(env.env.state)

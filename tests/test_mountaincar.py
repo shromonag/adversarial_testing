@@ -299,10 +299,10 @@ for r in rand_nums[0:1]:
     np.random.seed(r)
     node0 = pred_node(f=lambda traj: traj[1]['reward'])
     TM = test_module(bounds=bounds, sut=lambda x0: sut(x0),
-                     f_tree = node0, with_random = True, init_sample = 50,
+                     f_tree = node0, with_random = True, init_sample = 70,
                      optimize_restarts=5, exp_weight=10)
     TM.initialize()
-    TM.run_BO(200)
+    TM.run_BO(180)
     smooth_details_r1.append([TM.smooth_count, TM.smooth_min_x,TM.smooth_min_val])
     random_details_r1.append([TM.rand_count, TM.rand_min_x, TM.rand_min_val])
     print(r, smooth_details_r1[-1], random_details_r1[-1])
@@ -313,10 +313,10 @@ for r in rand_nums[0:1]:
     np.random.seed(r)
     node0 = pred_node(f=lambda traj: traj[1]['reward'])
     TM = test_module(bounds=bounds, sut=lambda x0: sut(x0),
-                     f_tree = node0, with_random = True, init_sample = 50,
+                     f_tree = node0, with_random = True, init_sample = 70,
                      optimize_restarts=5, exp_weight=10, cost_model=cost_func)
     TM.initialize()
-    TM.run_BO(200)
+    TM.run_BO(180)
     smooth_details_r1.append([TM.smooth_count,TM.smooth_min_x, TM.smooth_min_val])
     random_details_r1.append([TM.rand_count, TM.rand_min_x,TM.rand_min_val])
     print(r, smooth_details_r1[-1], random_details_r1[-1])
