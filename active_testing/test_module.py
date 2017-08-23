@@ -92,7 +92,7 @@ class test_module:
             if 'kernel_type' in kwargs:
                 self.kernel = kwargs['kernel_type'](len(bounds))
             else:
-                self.kernel = GPy.kern.Matern32(len(bounds))
+                self.kernel = GPy.kern.Matern32(len(bounds), ARD=True)
 
         if self.using_kpca:
             if isinstance(self.optimizer, lbfgs_opt) or \
