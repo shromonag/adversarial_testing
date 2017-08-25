@@ -89,8 +89,13 @@ class pred_node(tree_node):
             kernel = kwargs['kernel']
         else:
             kernel = GPy.kern.Matern32(X.shape[1])
+        if 'normalizer' in kwargs:
+            normalizer=kwargs['normalizer']
+        else:
+            normalizer=False
         self.GP = GPy.models.GPRegression(X= X, Y=self.Y,
-                                          kernel=copy.deepcopy(kernel))
+                                          kernel=copy.deepcopy(kernel),
+                                          normalizer=normalizer)
 
         if 'optimize_restarts' in kwargs:
             self.GP.optimize_restarts(kwargs['optimize_restarts'])

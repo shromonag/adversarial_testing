@@ -14,7 +14,8 @@ import copy
 import GPy
 
 class test_module:
-    def __init__(self, sut, bounds, spec=None,f_tree=None, optimizer=None, **kwargs):
+    def __init__(self, sut, bounds, spec=None,f_tree=None, optimizer=None,
+                 normalizer=False,seed=None, **kwargs):
         self.system_under_test = sut
 
         # Choosing the optimizer function
@@ -25,6 +26,8 @@ class test_module:
             # To implement parser to convert from specification to the function f
 
         self.bounds = bounds
+        self.normalizer=normalizer
+        self.seed=seed
 
         if 'cost_model' in kwargs:
             self.cost_model = kwargs['cost_model']
@@ -107,10 +110,6 @@ class test_module:
         else:
             self.X = []
 
-        if 'seed' in kwargs:
-            self.seed =kwargs['seed']
-        else:
-            self.seed =None
 
     def initialize(self):
         if len(self.X) == 0:
@@ -131,7 +130,8 @@ class test_module:
                 X_s = self.smooth_X
             self.f_acqu.init_GPs(X_s, trajs,
                                  kernel=copy.deepcopy(self.kernel),
-                                 optimize_restarts=self.optimize_restarts)
+                                 optimize_restarts=self.optimize_restarts,
+                                 normalizer=self.normalizer)
 
         if self.with_ns:
             self.ns_X = copy.deepcopy(self.X)
@@ -142,7 +142,9 @@ class test_module:
             else:
                 X_ns = copy.deepcopy(self.ns_X)
             self.ns_GP = GPy.models.GPRegression(X_ns, Y,
-                                        kernel=copy.deepcopy(self.kernel))
+                                        kernel=copy.deepcopy(self.kernel),
+                                        normalizer=self.normalizer,
+                                        ARD=True)
             self.ns_GP.optimize_restarts(self.optimize_restarts)
 
 
