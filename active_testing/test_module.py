@@ -143,8 +143,7 @@ class test_module:
                 X_ns = copy.deepcopy(self.ns_X)
             self.ns_GP = GPy.models.GPRegression(X_ns, Y,
                                         kernel=copy.deepcopy(self.kernel),
-                                        normalizer=self.normalizer,
-                                        ARD=True)
+                                        normalizer=self.normalizer)
             self.ns_GP.optimize_restarts(self.optimize_restarts)
 
 
