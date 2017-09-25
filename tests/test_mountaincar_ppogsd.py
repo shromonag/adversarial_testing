@@ -1,131 +1,156 @@
 '''
 Here we consider a controller trained  for the mountain-car environment in
 OpenAI Gym. The controller was taken from the baselines. The controller is
-based on ddpg.
+based on ppo.
 '''
 
 
-import gym
+from baselines.common import set_global_seeds, tf_util as U
+import gym, logging
+from baselines import logger
 import numpy as np
-from baselines.ddpg.ddpg import DDPG
-from baselines.ddpg.noise import *
-from baselines.ddpg.models import Actor, Critic
-from baselines.ddpg.memory import Memory
-from baselines.common import set_global_seeds
-import baselines.common.tf_util as U
-from mpi4py import MPI
-from collections import deque
+import tensorflow as tf
+from baselines.ppo1 import mlp_policy, pposgd_simple
+from baselines.ppo1.pposgd_simple import *
 
+def learn_return(env, policy_func, *,
+        timesteps_per_batch, # timesteps per actor per update
+        clip_param, entcoeff, # clipping parameter epsilon, entropy coeff
+        optim_epochs, optim_stepsize, optim_batchsize,# optimization hypers
+        gamma, lam, # advantage estimation
+        max_timesteps=0, max_episodes=0, max_iters=0, max_seconds=0,  # time constraint
+        callback=None, # you can do anything in the callback, since it takes locals(), globals()
+        schedule='constant' # annealing for stepsize parameters (epsilon and adam)
+        ):
+    # Setup losses and stuff
+    # ----------------------------------------
+    ob_space = env.observation_space
+    ac_space = env.action_space
+    pi = policy_func("pi", ob_space, ac_space) # Construct network for new policy
+    oldpi = policy_func("oldpi", ob_space, ac_space) # Network for old policy
+    atarg = tf.placeholder(dtype=tf.float32, shape=[None]) # Target advantage function (if applicable)
+    ret = tf.placeholder(dtype=tf.float32, shape=[None]) # Empirical return
 
-def train_return(env, param_noise, actor, critic, memory,nb_epochs=250, nb_epoch_cycles=20, reward_scale=1.,
-                 render=False,normalize_returns=False, normalize_observations=True, critic_l2_reg=1e-2, actor_lr=1e-4,
-                 critic_lr=1e-3,
-          action_noise=None, popart=False, gamma=0.99, clip_norm=None,nb_train_steps=50, nb_rollout_steps=2048,
-          batch_size=64,tau=0.01, param_noise_adaption_interval=50):
-    rank = MPI.COMM_WORLD.Get_rank()
+    lrmult = tf.placeholder(name='lrmult', dtype=tf.float32, shape=[]) # learning rate multiplier, updated with schedule
+    clip_param = clip_param * lrmult # Annealed cliping parameter epislon
 
-    assert (np.abs(env.action_space.low) == env.action_space.high).all()  # we assume symmetric actions.
-    max_action = env.action_space.high
-    agent = DDPG(actor, critic, memory, env.observation_space.shape, env.action_space.shape,
-                 gamma=gamma, tau=tau, normalize_returns=normalize_returns,
-                 normalize_observations=normalize_observations,
-                 batch_size=batch_size, action_noise=action_noise, param_noise=param_noise, critic_l2_reg=critic_l2_reg,
-                 actor_lr=actor_lr, critic_lr=critic_lr, enable_popart=popart, clip_norm=clip_norm,
-                 reward_scale=reward_scale)
+    ob = U.get_placeholder_cached(name="ob")
+    ac = pi.pdtype.sample_placeholder([None])
 
-    # Set up logging stuff only for a single worker.
+    kloldnew = oldpi.pd.kl(pi.pd)
+    ent = pi.pd.entropy()
+    meankl = U.mean(kloldnew)
+    meanent = U.mean(ent)
+    pol_entpen = (-entcoeff) * meanent
 
+    ratio = tf.exp(pi.pd.logp(ac) - oldpi.pd.logp(ac)) # pnew / pold
+    surr1 = ratio * atarg # surrogate from conservative policy iteration
+    surr2 = U.clip(ratio, 1.0 - clip_param, 1.0 + clip_param) * atarg #
+    pol_surr = - U.mean(tf.minimum(surr1, surr2)) # PPO's pessimistic surrogate (L^CLIP)
+    vfloss1 = tf.square(pi.vpred - ret)
+    vpredclipped = oldpi.vpred + tf.clip_by_value(pi.vpred - oldpi.vpred, -clip_param, clip_param)
+    vfloss2 = tf.square(vpredclipped - ret)
+    vf_loss = .5 * U.mean(tf.maximum(vfloss1, vfloss2)) # we do the same clipping-based trust region for the value function
+    total_loss = pol_surr + pol_entpen + vf_loss
+    losses = [pol_surr, pol_entpen, vf_loss, meankl, meanent]
+    loss_names = ["pol_surr", "pol_entpen", "vf_loss", "kl", "ent"]
 
+    var_list = pi.get_trainable_variables()
+    lossandgrad = U.function([ob, ac, atarg, ret, lrmult], losses + [U.flatgrad(total_loss, var_list)])
+    adam = MpiAdam(var_list)
 
-    episode_rewards_history = deque(maxlen=100)
-    #with U.single_threaded_session() as sess:
-    # Prepare everything.
-    agent.initialize(sess)
-    sess.graph.finalize()
+    assign_old_eq_new = U.function([],[], updates=[tf.assign(oldv, newv)
+        for (oldv, newv) in zipsame(oldpi.get_variables(), pi.get_variables())])
+    compute_losses = U.function([ob, ac, atarg, ret, lrmult], losses)
 
-    agent.reset()
-    obs = env.reset()
-    episode_reward = 0.
-    episode_step = 0
-    episodes = 0
-    t = 0
+    U.initialize()
+    adam.sync()
 
-    epoch_episode_rewards = []
-    epoch_episode_steps = []
-    epoch_actions = []
-    epoch_qs = []
-    epoch_episodes = 0
-    for epoch in range(nb_epochs):
-        print('epoch number:', epoch)
-        for cycle in range(nb_epoch_cycles):
-            # Perform rollouts.
-            for t_rollout in range(nb_rollout_steps):
-                # Predict next action.
-                action, q = agent.pi(obs, apply_noise=True, compute_Q=True)
-                assert action.shape == env.action_space.shape
+    # Prepare for rollouts
+    # ----------------------------------------
+    seg_gen = traj_segment_generator(pi, env, timesteps_per_batch, stochastic=True)
 
-                # Execute next action.
-                if rank == 0 and render:
-                    env.render()
-                assert max_action.shape == action.shape
-                new_obs, r, done, info = env.step(
-                    max_action * action)  # scale for execution in env (as far as DDPG is concerned, every action is in [-1, 1])
-                t += 1
-                if rank == 0 and render:
-                    env.render()
-                episode_reward += r
-                episode_step += 1
+    episodes_so_far = 0
+    timesteps_so_far = 0
+    iters_so_far = 0
+    tstart = time.time()
+    lenbuffer = deque(maxlen=100) # rolling buffer for episode lengths
+    rewbuffer = deque(maxlen=100) # rolling buffer for episode rewards
 
-                # Book-keeping.
-                epoch_actions.append(action)
-                epoch_qs.append(q)
-                agent.store_transition(obs, action, r, new_obs, done)
-                obs = new_obs
+    assert sum([max_iters>0, max_timesteps>0, max_episodes>0, max_seconds>0])==1, "Only one time constraint permitted"
 
-                if done:
-                    # Episode done.
-                    epoch_episode_rewards.append(episode_reward)
-                    episode_rewards_history.append(episode_reward)
-                    epoch_episode_steps.append(episode_step)
-                    episode_reward = 0.
-                    episode_step = 0
-                    epoch_episodes += 1
-                    episodes += 1
+    while True:
+        if callback: callback(locals(), globals())
+        if max_timesteps and timesteps_so_far >= max_timesteps:
+            break
+        elif max_episodes and episodes_so_far >= max_episodes:
+            break
+        elif max_iters and iters_so_far >= max_iters:
+            break
+        elif max_seconds and time.time() - tstart >= max_seconds:
+            break
 
-                    agent.reset()
-                    obs = env.reset()
+        if schedule == 'constant':
+            cur_lrmult = 1.0
+        elif schedule == 'linear':
+            cur_lrmult =  max(1.0 - float(timesteps_so_far) / max_timesteps, 0)
+        else:
+            raise NotImplementedError
 
-            # Train.
-            epoch_actor_losses = []
-            epoch_critic_losses = []
-            epoch_adaptive_distances = []
-            for t_train in range(nb_train_steps):
-                # Adapt param noise, if necessary.
-                if memory.nb_entries >= batch_size and t % param_noise_adaption_interval == 0:
-                    distance = agent.adapt_param_noise()
-                    epoch_adaptive_distances.append(distance)
+        logger.log("********** Iteration %i ************"%iters_so_far)
 
-                cl, al = agent.train()
-                epoch_critic_losses.append(cl)
-                epoch_actor_losses.append(al)
-                agent.update_target_net()
-    return agent
+        seg = seg_gen.__next__()
+        print(sum(seg['rew']),seg['rew'], len(seg['rew']))
+        add_vtarg_and_adv(seg, gamma, lam)
 
+        # ob, ac, atarg, ret, td1ret = map(np.concatenate, (obs, acs, atargs, rets, td1rets))
+        ob, ac, atarg, tdlamret = seg["ob"], seg["ac"], seg["adv"], seg["tdlamret"]
+        vpredbefore = seg["vpred"] # predicted value function before udpate
+        atarg = (atarg - atarg.mean()) / atarg.std() # standardized advantage function estimate
+        d = Dataset(dict(ob=ob, ac=ac, atarg=atarg, vtarg=tdlamret), shuffle=not pi.recurrent)
+        optim_batchsize = optim_batchsize or ob.shape[0]
 
+        if hasattr(pi, "ob_rms"): pi.ob_rms.update(ob) # update running mean/std for policy
+
+        assign_old_eq_new() # set old parameter values to new parameter values
+        logger.log("Optimizing...")
+        logger.log(fmt_row(13, loss_names))
+        # Here we do a bunch of optimization epochs over the data
+        for _ in range(optim_epochs):
+            losses = [] # list of tuples, each of which gives the loss for a minibatch
+            for batch in d.iterate_once(optim_batchsize):
+                *newlosses, g = lossandgrad(batch["ob"], batch["ac"], batch["atarg"], batch["vtarg"], cur_lrmult)
+                adam.update(g, optim_stepsize * cur_lrmult)
+                losses.append(newlosses)
+            logger.log(fmt_row(13, np.mean(losses, axis=0)))
+        lrlocal = (seg["ep_lens"], seg["ep_rets"])  # local values
+        listoflrpairs = MPI.COMM_WORLD.allgather(lrlocal)  # list of tuples
+        lens, rews = map(flatten_lists, zip(*listoflrpairs))
+        episodes_so_far += len(lens)
+        timesteps_so_far += sum(lens)
+        iters_so_far+=1
+
+    return pi
+
+U.make_session(num_cpu=1).__enter__()
 seed = 8902077161928034768
 env = gym.make("MountainCarContinuous-v0")
 env.seed(seed)
-sess = U.make_session(num_cpu=1).__enter__()
-nb_actions = env.action_space.shape[-1]
-layer_norm=True
-param_noise = AdaptiveParamNoiseSpec(initial_stddev=float(0.2), desired_action_stddev=float(0.2))
-memory = Memory(limit=int(1e6), action_shape=env.action_space.shape, observation_shape=env.observation_space.shape)
-critic = Critic(layer_norm=layer_norm)
-actor = Actor(nb_actions, layer_norm=layer_norm)
+num_timesteps=5e6
 
+def policy_fn(name, ob_space, ac_space):
+    return mlp_policy.MlpPolicy(name=name, ob_space=ob_space, ac_space=ac_space,
+                                hid_size=64, num_hid_layers=2)
 
-agent = train_return(env=env,actor=actor, critic=critic, memory=memory, param_noise=param_noise)
-max_action = env.action_space.high
+env.seed(seed)
+gym.logger.setLevel(logging.WARN)
+pi = learn_return(env, policy_fn,
+        max_timesteps=num_timesteps,
+        timesteps_per_batch=2048,
+        clip_param=0.2, entcoeff=0.0,
+        optim_epochs=10, optim_stepsize=3e-4, optim_batchsize=64,
+        gamma=0.99, lam=0.95,
+    )
 
 from gym import spaces
 def compute_traj(**kwargs):
@@ -159,8 +184,8 @@ def compute_traj(**kwargs):
     traj = [ob]
     while done==False:
         iter_time += 1
-        action, _ = agent.pi(ob, apply_noise=False, compute_Q=True)
-        ob, r, done, _ = env.step(max_action*action)
+        action, vpred = pi.act(False, ob)
+        ob, r, done, _ = env.step(action)
         traj.append(ob)
         reward += r
         done = done or iter_time >= max_steps
@@ -213,7 +238,7 @@ rand_nums = [3188388221,
 # We need only one node for the reward. The reward is a smooth function
 # given that the closed loop system is deterministic
 bounds = [(-0.6, -0.4)] # Bounds on the position
-bounds.append((-0.025, 0.025)) # Bounds on the velocity
+bounds.append((-0.0001, 0.0001)) # Bounds on the velocity
 bounds.append((0.4, 0.6)) # Bounds on the goal position
 bounds.append((0.055, 0.075)) # Bounds on the max speed
 bounds.append((0.0005, 0.0025)) # Bounds on the power magnitude
@@ -376,7 +401,7 @@ for r in rand_nums:
                      normalizer=True)
     TM.initialize()
     TM.run_BO(140)
-    smooth_vals = TM.f_acqu.find_GP_func()
+    smooth_vals = TM.find_GP_func()
     smooth_details_r3.append([np.sum(smooth_vals < -0.25),
                               np.sum(smooth_vals < -0.30),
                               TM.smooth_min_x,

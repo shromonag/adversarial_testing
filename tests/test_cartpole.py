@@ -136,10 +136,11 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 env = gym.make('CartPole-v0')
-seed = env._seed()
+seed = 17588724670887928270
+env.seed(seed)
 agent = EpisodicAgent(env.action_space)
 
-episode_count = 500
+episode_count = 700
 max_steps = 200
 reward = 0
 done = False
@@ -209,16 +210,21 @@ def cost_func(X):
 # ------------------------------------------------------------------------------
 from active_testing import pred_node, max_node, min_node, test_module
 from active_testing.utils import sample_from
-rand_nums=[1230597245,
- 366379077,
- 1450717077,
- 4233612701,
- 315635237,
- 717888137,
- 4012326164,
- 3986671499,
- 1738011324,
- 719534766]
+rand_nums = [2440271967,
+ 3816968049,
+ 3160626546,
+ 636413671,
+ 3105544786,
+ 646012482,
+ 3406852803,
+ 1769141240,
+ 109713304,
+ 3433822084,
+ 2481885549,
+ 2630720097,
+ 1291718590,
+ 2572110400,
+ 3580267181]
 
 # Requirement 1: Find the initial configuration that minimizes the reward
 # We need only one node for the reward. The reward is a smooth function
@@ -231,15 +237,16 @@ bounds.append((8.00, 12.00)) # Bounds on the force magnitude
 smooth_details_r1 = []
 random_details_r1 = []
 
+
 # This set assumes random sampling and checking
-for r in rand_nums[0:1]:
+for r in rand_nums:
     np.random.seed(r)
     node0 = pred_node(f=lambda traj: traj[1]['reward'])
     TM = test_module(bounds=bounds, sut=lambda x0: sut(200,x0, ead=True),
                      f_tree = node0, with_random = True, init_sample = 70,
-                     optimize_restarts=5, exp_weight=10)
+                     optimize_restarts=5, exp_weight=2, seed=r)
     TM.initialize()
-    TM.run_BO(180)
+    TM.run_BO(130)
     smooth_details_r1.append([np.sum(TM.f_acqu.GP.Y < 100),
                               np.sum(TM.f_acqu.GP.Y < 150),
                               TM.smooth_min_x,TM.smooth_min_val])
@@ -250,25 +257,24 @@ for r in rand_nums[0:1]:
 
 
 # With cost function
-for r in rand_nums[0:1]:
     np.random.seed(r)
-    node0 = pred_node(f=lambda traj: traj[1]['reward'])
-    TM = test_module(bounds=bounds, sut=lambda x0: sut(200,x0, ead=True),
-                     f_tree = node0, with_random = True, init_sample = 70,
-                     optimize_restarts=5, exp_weight=10, cost_model=cost_func)
-    TM.initialize()
-    TM.run_BO(180)
-    smooth_details_r1.append([np.sum(TM.f_acqu.GP.Y < 100),
-                              np.sum(TM.f_acqu.GP.Y < 150),
-                              TM.smooth_min_x, TM.smooth_min_val])
-    random_details_r1.append([np.sum(np.array(TM.random_Y) < 100),
-                              np.sum(np.array(TM.random_Y) < 150),
-                              TM.rand_min_x, TM.rand_min_val])
+    node0_cf = pred_node(f=lambda traj: traj[1]['reward'])
+    TM_cf = test_module(bounds=bounds, sut=lambda x0: sut(200,x0, ead=True),
+                     f_tree = node0_cf, with_random = True, init_sample = 70,
+                     optimize_restarts=5, exp_weight=2, cost_model=cost_func)
+    TM_cf.initialize()
+    TM_cf.run_BO(130)
+    smooth_details_r1.append([np.sum(TM_cf.f_acqu.GP.Y < 100),
+                              np.sum(TM_cf.f_acqu.GP.Y < 150),
+                              TM_cf.smooth_min_x, TM_cf.smooth_min_val])
+    random_details_r1.append([np.sum(np.array(TM_cf.random_Y) < 100),
+                              np.sum(np.array(TM_cf.random_Y) < 150),
+                              TM_cf.rand_min_x, TM_cf.rand_min_val])
     print(r, smooth_details_r1[-1], random_details_r1[-1])
 
 # Requirement 2: We would like the cartpole to not travel more than a certain
 # distance from its original location(2.4) and the pole should remain within
-# a certain degree from rest position(0.20)
+# a certain degree from rest position(0.209)
 def compute_Y(init, traj):
     ys = [min(2.4 - np.abs(y[0] - init[0]), 0.209 - np.abs(y[2])) for y in traj]
     return np.array(ys).min()
@@ -276,30 +282,30 @@ def compute_Y(init, traj):
 # The requirement is a smooth function. Hence we need only one node
 smooth_details_r2 = []
 random_details_r2 = []
-for _ in range(1):
-    print(r)
-    r = np.random.randint(2**32-1)
+for r in rand_nums:
     np.random.seed(r)
     node0 = pred_node(f=lambda traj: compute_Y(traj[0][0], traj[0]))
     TM = test_module(bounds=bounds, sut=lambda x0: sut(200,x0, ead=True),
                      f_tree = node0, with_random = True, init_sample = 70,
-                     optimize_restarts=5, exp_weight=10,seed=r)
+                     optimize_restarts=5, exp_weight=2,seed=r)
     TM.initialize()
-    TM.run_BO(180)
+    TM.run_BO(130)
     smooth_details_r2.append([TM.smooth_count,TM.smooth_min_x,TM.smooth_min_val])
     random_details_r2.append([TM.rand_count,TM.rand_min_x, TM.rand_min_val])
     print(r, smooth_details_r2[-1], random_details_r2[-1])
 
-for _ in range(1):
+
     np.random.seed(r)
-    node0 = pred_node(f=lambda traj: compute_Y(traj[0][0], traj[0]))
-    TM = test_module(bounds=bounds, sut=lambda x0: sut(200,x0, ead=True),
-                     f_tree = node0, with_random = True, init_sample = 70,
-                     optimize_restarts=5, exp_weight=10, cost_model=cost_func)
-    TM.initialize()
-    TM.run_BO(180)
-    smooth_details_r2.append([TM.smooth_count, TM.smooth_min_x, TM.smooth_min_val])
-    random_details_r2.append([TM.rand_count, TM.rand_min_x, TM.rand_min_val])
+    node0_cf = pred_node(f=lambda traj: compute_Y(traj[0][0], traj[0]))
+    TM_cf = test_module(bounds=bounds, sut=lambda x0: sut(200,x0, ead=True),
+                     f_tree = node0_cf, with_random = True, init_sample = 70,
+                     optimize_restarts=5, exp_weight=2, cost_model=cost_func)
+    TM_cf.initialize()
+    TM_cf.run_BO(130)
+    smooth_details_r2.append([TM_cf.smooth_count, TM_cf.smooth_min_x,
+                              TM_cf.smooth_min_val])
+    random_details_r2.append([TM_cf.rand_count, TM_cf.rand_min_x,
+                              TM_cf.rand_min_val])
     print(r, smooth_details_r2[-1], random_details_r2[-1])
 
 
@@ -319,7 +325,7 @@ def pred2(traj):
     traj_ = traj[0]
     mass = traj[1]['mass']
     v_s = np.array(traj_).T[1]
-    return min(2 - np.abs(mass*v_s))
+    return min(2. - np.abs(mass*v_s))
 
 def pred3(traj):
     traj=traj[0]
@@ -330,28 +336,7 @@ smooth_details_r3 = []
 ns_details_r3 = []
 random_details_r3 = []
 
-def compare_s_ns(TM, TM_ns, K, num_sample, r):
-    # This is the same routime as implemented in sample_opt.
-    # Here, I re-implement it as I am comparing the different methods, and
-    # hence the sampled X needs to remain the same.
-    np.random.seed(r)
-    for _ in range(K):
-        X = sample_from(num_sample, bounds)
-        smooth_vals = TM.f_acqu.evaluate(X, k=2)
-        m_ns, v_ns = TM_ns.ns_GP.predict(X)
-        ns_vals = m_ns - TM_ns.k*np.sqrt(v_ns)
-        k_smooth = smooth_vals.argmin()
-        k_ns = ns_vals.argmin()
-        print(TM.f_acqu.eval_robustness(TM.system_under_test(X[k_smooth])), \
-              TM.f_acqu.eval_robustness(TM.system_under_test(X[k_ns])))
-        TM.f_acqu.update_GPs(np.vstack((TM.f_acqu.children[0].GP.X, \
-                            np.atleast_2d(X[k_smooth]))), \
-                             [TM.system_under_test(X[k_smooth])])
-        TM_ns.ns_GP.set_XY(np.vstack((TM_ns.ns_GP.X, np.atleast_2d(X[k_ns]))), \
-                    np.vstack((TM_ns.ns_GP.Y, \
-                    TM_ns.f_acqu.eval_robustness(TM_ns.system_under_test(X[k_ns])))))
-        TM_ns.ns_GP.optimize()
-    return TM, TM_ns
+
 
 for r in rand_nums:
     np.random.seed(r)
@@ -360,9 +345,10 @@ for r in rand_nums:
     node2 = pred_node(f=lambda traj: pred3(traj))
     node3 = max_node(children= [node0, node1, node2])
     TM = test_module(bounds=bounds, sut=lambda x0: sut(200,x0),
-                     f_tree = node3, with_random = True, init_sample = 70,
-                     optimize_restarts=5, exp_weight=10)
+                     f_tree = node3,init_sample = 60,
+                     optimize_restarts=3, exp_weight=5, normalizer=True)
     TM.initialize()
+    TM.run_BO(140)
 
     np.random.seed(r)
     node0_ns = pred_node(f=lambda traj: pred1(traj))
@@ -370,58 +356,17 @@ for r in rand_nums:
     node2_ns = pred_node(f=lambda traj: pred3(traj))
     node3_ns = max_node(children=[node0_ns, node1_ns, node2_ns])
     TM_ns = test_module(bounds=bounds, sut=lambda x0: sut(200,x0),
-                     f_tree=node3_ns, with_random=True, init_sample=70,
-                     with_smooth=False, with_ns=True,
-                     optimize_restarts=5, exp_weight=10)
+                     f_tree=node3_ns, with_random=True, init_sample=60,
+                     with_smooth=False, with_ns=True, seed=r,
+                     optimize_restarts=3, exp_weight=5, normalizer=True)
     TM_ns.initialize()
+    TM_ns.run_BO(140)
 
+    smooth_details_r3.append([TM.smooth_count, TM.smooth_min_x,
+                              TM.smooth_min_val])
+    ns_details_r3.append([TM_ns.ns_count, TM_ns.ns_min_x,
+                          TM_ns.ns_min_val])
 
-    TM, TM_ns = compare_s_ns(TM, TM_ns, 180, 250000, r)
-    smooth_vals = np.array(TM.f_acqu.find_GP_func())
-    smooth_details_r3.append([np.sum(smooth_vals < 0),
-                              TM.f_acqu.children[0].GP.X[smooth_vals.argmin()],
-                              smooth_vals.min()])
-    ns_details_r3.append([np.sum(TM_ns.ns_GP.Y <0),
-                          TM_ns.ns_GP.X[TM_ns.ns_GP.Y.argmin()],
-                          TM_ns.ns_GP.Y.min()])
-    TM.with_smooth = False
-    TM.run_BO(180)
-    random_details_r3.append([TM.rand_count, TM.rand_min_x,TM.rand_min_val])
-    print(r, smooth_details_r3[-1], ns_details_r3[-1], random_details_r3[-1])
-
-for r in rand_nums:
-    np.random.seed(r)
-    node0 = pred_node(f=lambda traj: pred1(traj))
-    node1 = pred_node(f=lambda traj: pred2(traj))
-    node2 = pred_node(f=lambda traj: pred3(traj))
-    node3 = max_node(children=[node0, node1, node2])
-    TM = test_module(bounds=bounds, sut=lambda x0: sut(x0),
-                     f_tree=node3, with_random=True, init_sample=70,
-                     optimize_restarts=5, exp_weight=10,
-                     cost_model=cost_func)
-    TM.initialize()
-
-    np.random.seed(r)
-    node0_ns = pred_node(f=lambda traj: pred1(traj))
-    node1_ns = pred_node(f=lambda traj: pred2(traj))
-    node2_ns = pred_node(f=lambda traj: pred3(traj))
-    node3_ns = max_node(children=[node0_ns, node1_ns, node2_ns])
-    TM_ns = test_module(bounds=bounds, sut=lambda x0: sut(x0),
-                        f_tree=node3_ns, with_random=True, init_sample=70,
-                        with_smooth=False, with_ns=True,
-                        optimize_restarts=5, exp_weight=10,
-                        cost_model=cost_func)
-    TM_ns.initialize()
-
-    TM, TM_ns = compare_s_ns(TM, TM_ns, 180, 250000, r)
-    smooth_vals = np.array(TM.f_acqu.find_GP_func())
-    smooth_details_r3.append([np.sum(smooth_vals < 0),
-                              TM.f_acqu.children[0].GP.X[smooth_vals.argmin()],
-                              smooth_vals.min()])
-    ns_details_r3.append([np.sum(TM_ns.ns_GP.Y < 0),
-                          TM_ns.ns_GP.X[TM_ns.ns_GP.Y.argmin()],
-                          TM_ns.ns_GP.Y.min()])
-    TM.with_smooth = False
-    TM.run_BO(180)
-    random_details_r3.append([TM.rand_count, TM.rand_min_x, TM.rand_min_val])
+    random_details_r3.append([TM_ns.rand_count, TM_ns.rand_min_x,
+                              TM_ns.rand_min_val])
     print(r, smooth_details_r3[-1], ns_details_r3[-1], random_details_r3[-1])

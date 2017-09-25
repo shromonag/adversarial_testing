@@ -47,10 +47,10 @@ class direct_opt(optimization_routine):
             x = np.atleast_2d(x)
             return f(x)*self.cost(x), 0
 
-        lower_bounds = [b[0] for b in bounds]
-        upper_bounds = [b[1] for b in bounds]
+        lower_bounds = [b[0] for b in self.bounds]
+        upper_bounds = [b[1] for b in self.bounds]
 
-        x, fmin, _ = solve(f_direct, lower_bounds, upper_bounds, alg_method=1,
+        x, fmin, _ = solve(f_direct, lower_bounds, upper_bounds, algmethod=1,
                            maxT = self.iters, maxf=self.funcs)
 
         return np.atleast_2d(x), np.atleast_1d(fmin)

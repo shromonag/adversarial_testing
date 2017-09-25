@@ -43,17 +43,19 @@ def f_prednode(traj):
 bounds = [(4.5, 5.5)] * 100
 x0 = np.array([0., 3.])
 
-rand_nums = [3099588838, 3262578689, 4162876793, 2715705470]
+rand_nums = []
 rand_details = []
 smooth_details = []
-for r in rand_nums:
+for _ in range(15):
+    r = np.random.randint(2**32 - 1)
     np.random.seed(r)
     node0 = pred_node(f=f_prednode)
 
     TM = test_module(bounds=bounds, sut=lambda x: compute_traj(x0, x), f_tree=node0,
-                     with_random = True, init_sample = 100, optimize_restarts = 5,
-                     exp_weight = 10, low_dim = 20, kernel_type = GPy.kern.RBF)
+                     with_random = True, init_sample = 100, optimize_restarts = 1,
+                     exp_weight = 10, kernel_type = GPy.kern.RBF)
     TM.initialize()
     TM.run_BO(150)
     smooth_details.append([TM.smooth_min_val, TM.smooth_count])
     rand_details.append([TM.rand_min_val, TM.rand_count])
+    rand_nums.append(r)
