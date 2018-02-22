@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-setup(name='active_testing',
+setup(name='adversarial_testing',
       author='Shromona Ghosh',
       author_email='shromona.ghosh@berkeley.edu',
       install_requires=[
