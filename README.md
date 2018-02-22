@@ -1,4 +1,4 @@
-# active_testing
+# adversarial_testing
 This is a python package for testing controllers for black box system in simulators
 
 # Installation
